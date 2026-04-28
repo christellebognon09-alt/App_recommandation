@@ -1,17 +1,27 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 export default function Login() {
+  // Récupération de l'état du thème
+  const [isDarkMode, setIsDarkMode] = useState(localStorage.getItem('theme') === 'dark');
+
+  // Application de la classe dark au chargement
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
   return (
-    // On utilise exactement la même structure de centrage que Register
-    <div className="min-h-screen bg-[#f7f9fb] flex items-center justify-center p-6 font-sans">
+    <div className={`min-h-screen flex items-center justify-center p-6 font-sans transition-colors duration-300 ${isDarkMode ? 'bg-[#0b1c30]' : 'bg-[#f7f9fb]'}`}>
       
-      {/* On utilise la même largeur : max-w-md */}
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-100 p-10 transform transition-all">
+      <div className={`w-full max-w-md rounded-[2.5rem] shadow-2xl border p-10 transform transition-all ${isDarkMode ? 'bg-[#162a41] border-slate-700 shadow-black/20' : 'bg-white border-slate-100'}`}>
         
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-2">GeoSmart</h1>
-          <p className="text-slate-500 text-sm">Bon retour ! Connectez-vous pour continuer.</p>
+          <h1 className={`text-3xl font-black tracking-tight mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>GeoSmart</h1>
+          <p className={`${isDarkMode ? 'text-slate-400' : 'text-slate-500'} text-sm`}>Bon retour ! Connectez-vous pour continuer.</p>
         </div>
 
         <form className="space-y-6">
@@ -23,7 +33,7 @@ export default function Login() {
               <input 
                 type="email" 
                 placeholder="nom@exemple.com" 
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-[#00685f] outline-none text-sm transition-all shadow-inner" 
+                className={`w-full pl-12 pr-4 py-4 border-none rounded-2xl focus:ring-2 focus:ring-[#00685f] outline-none text-sm transition-all shadow-inner ${isDarkMode ? 'bg-slate-800 text-white placeholder-slate-500' : 'bg-slate-50 text-slate-900'}`} 
               />
             </div>
           </div>
@@ -32,14 +42,14 @@ export default function Login() {
           <div className="space-y-2">
             <div className="flex justify-between items-center px-1">
               <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Mot de passe</label>
-              <Link to="/forgot-password" size="sm" className="text-[11px] font-bold text-[#00685f] hover:underline uppercase tracking-widest">Oublié ?</Link>
+              <Link to="/forgot-password" className="text-[11px] font-bold text-[#00685f] hover:underline uppercase tracking-widest">Oublié ?</Link>
             </div>
             <div className="relative">
               <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">lock</span>
               <input 
                 type="password" 
                 placeholder="••••••••" 
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-[#00685f] outline-none text-sm transition-all shadow-inner" 
+                className={`w-full pl-12 pr-4 py-4 border-none rounded-2xl focus:ring-2 focus:ring-[#00685f] outline-none text-sm transition-all shadow-inner ${isDarkMode ? 'bg-slate-800 text-white placeholder-slate-500' : 'bg-slate-50 text-slate-900'}`} 
               />
             </div>
           </div>
@@ -51,25 +61,25 @@ export default function Login() {
 
           {/* Séparateur */}
           <div className="relative flex items-center py-2">
-            <div className="flex-grow border-t border-slate-100"></div>
-            <span className="mx-4 text-[10px] font-bold text-slate-300 uppercase tracking-widest">Ou</span>
-            <div className="flex-grow border-t border-slate-100"></div>
+            <div className={`flex-grow border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}></div>
+            <span className="mx-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ou</span>
+            <div className={`flex-grow border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}></div>
           </div>
 
           {/* Boutons Sociaux */}
           <div className="grid grid-cols-2 gap-4">
-            <button type="button" className="flex items-center justify-center gap-2 py-3 border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all font-bold text-xs text-slate-600">
+            <button type="button" className={`flex items-center justify-center gap-2 py-3 border rounded-2xl transition-all font-bold text-xs ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
               Google
             </button>
-            <button type="button" className="flex items-center justify-center gap-2 py-3 bg-black text-white rounded-2xl hover:bg-slate-800 transition-all font-bold text-xs">
+            <button type="button" className={`flex items-center justify-center gap-2 py-3 rounded-2xl transition-all font-bold text-xs ${isDarkMode ? 'bg-white text-black hover:bg-slate-200' : 'bg-black text-white hover:bg-slate-800'}`}>
               Apple
             </button>
           </div>
         </form>
 
         <div className="mt-10 text-center">
-          <p className="text-sm text-slate-500">
-            Nouveau ici ? <Link to="/register" className="text-[#00685f] font-bold hover:underline">Créer un compte</Link>
+          <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            Nouveau ici ? <Link to="/register" className="text-[#00685f] font-bold hover:underline ml-1">Créer un compte</Link>
           </p>
         </div>
       </div>
