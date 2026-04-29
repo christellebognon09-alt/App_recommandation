@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import api from '../api/axios'; // Assure-toi que le chemin est correct
+import api from '../api/axios';
 
 // --- CONFIGURATION DES ICONES ---
 const userIcon = L.icon({ 
@@ -16,7 +16,6 @@ const placeIcon = L.icon({
   iconSize: [25, 41], iconAnchor: [12, 41] 
 });
 
-// Composant pour déplacer la caméra de la carte
 function MapController({ center }) {
   const map = useMap();
   useEffect(() => {
@@ -29,7 +28,6 @@ export default function Home() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // --- ÉTATS UTILISATEUR CONNECTÉ ---
   const [user, setUser] = useState(null);
 
   useEffect(() => {
@@ -41,22 +39,40 @@ export default function Home() {
     }
   }, [navigate]);
 
-  // États UI
   const [activeMenu, setActiveMenu] = useState(null);
   const [search, setSearch] = useState("");
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  
+  // --- MODIFICATION ICI : Initialisation intelligente du thème ---
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    try {
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
   const [activeFilter, setActiveFilter] = useState(null);
   const [loading, setLoading] = useState(false);
   
-  // États Données
-  const [userPos, setUserPos] = useState([6.4481, 2.3481]); // Position GPS réelle
-  const [mapCenter, setMapCenter] = useState([6.4481, 2.3481]); // Centre de recherche
-  const [nearbyPlaces, setNearbyPlaces] = useState([]); // Résultats API (Restos, etc.)
+  const [userPos, setUserPos] = useState([6.4481, 2.3481]); 
+  const [mapCenter, setMapCenter] = useState([6.4481, 2.3481]); 
+  const [nearbyPlaces, setNearbyPlaces] = useState([]); 
   const [mySavedPlaces, setMySavedPlaces] = useState([
     { id: 1, name: "Mon Bureau - SIL", cat: "TRAVAIL", lat: 6.449, lon: 2.350 }
   ]);
 
-  // FONCTION LOGOUT
+  // --- MODIFICATION ICI : Persistance et application du thème ---
+  useEffect(() => {
+    const root = document.documentElement;
+    localStorage.setItem('theme', JSON.stringify(isDarkMode));
+    if (isDarkMode) {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
   const handleLogout = async () => {
     try {
       await api.post('/logout');
@@ -69,7 +85,6 @@ export default function Home() {
     }
   };
 
-  // 1. RECHERCHE DE QUARTIER / VILLE (API Nominatim)
   const handleSearchArea = async (e) => {
     if (e) e.preventDefault();
     if (!search) return;
@@ -80,7 +95,7 @@ export default function Home() {
       if (data.length > 0) {
         const coords = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
         setMapCenter(coords);
-        setNearbyPlaces([]); // On vide les anciens résultats
+        setNearbyPlaces([]); 
         setActiveFilter(null);
         if (location.pathname !== '/home') navigate('/home');
       } else {
@@ -93,20 +108,11 @@ export default function Home() {
     }
   };
 
-  // 2. RECHERCHE DE LIEUX PROCHES (Resto, Santé, etc.) AUTOUR DE LA ZONE
   const fetchNearby = async (category) => {
     setActiveFilter(category);
     setLoading(true);
-    
-    const tags = { 
-      'RESTAURANT': 'restaurant', 
-      'HÔTEL': 'hotel', 
-      'SANTÉ': 'hospital', 
-      'SPORT': 'gym' 
-    };
-
+    const tags = { 'RESTAURANT': 'restaurant', 'HÔTEL': 'hotel', 'SANTÉ': 'hospital', 'SPORT': 'gym' };
     const query = `[out:json];(node["amenity"="${tags[category]}"](around:3000,${mapCenter[0]},${mapCenter[1]});way["amenity"="${tags[category]}"](around:3000,${mapCenter[0]},${mapCenter[1]}););out center;`;
-    
     try {
       const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
       const data = await res.json();
@@ -125,7 +131,6 @@ export default function Home() {
     }
   };
 
-  // 3. ENREGISTRER UN LIEU (UTILISE LE GPS)
   const handleSaveLocation = () => {
     navigator.geolocation.getCurrentPosition((pos) => {
       const newLieu = {
@@ -135,7 +140,6 @@ export default function Home() {
         lat: pos.coords.latitude,
         lon: pos.coords.longitude
       };
-      // Note: Correction ici pour utiliser setMySavedPlaces car setSavedPlaces n'était pas défini
       setMySavedPlaces([newLieu, ...mySavedPlaces]);
       setUserPos([pos.coords.latitude, pos.coords.longitude]);
       setMapCenter([pos.coords.latitude, pos.coords.longitude]);
@@ -144,16 +148,15 @@ export default function Home() {
   };
 
   return (
-    <div className={`h-screen w-full flex flex-col ${isDarkMode ? 'bg-[#050c14] text-white' : 'bg-slate-50 text-slate-900'}`}>
+    <div className={`h-screen w-full flex flex-col transition-colors duration-500 ${isDarkMode ? 'bg-[#050c14] text-white' : 'bg-slate-50 text-slate-900'}`}>
       
-      {/* HEADER FONCTIONNEL MIS À JOUR */}
-      <header className={`w-full h-16 border-b flex justify-between items-center px-6 z-[5000] ${isDarkMode ? 'bg-[#0b1c30] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
+      <header className={`w-full h-16 border-b flex justify-between items-center px-6 z-[5000] transition-colors duration-500 ${isDarkMode ? 'bg-[#0b1c30] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
         <div className="flex items-center gap-8">
           <h1 className="text-xl font-black text-[#01c4a0]">GeoSmart</h1>
           <nav className="hidden md:flex gap-6 h-full pt-5">
-            <Link to="/home" className={`text-sm font-bold ${location.pathname === '/home' ? 'text-white border-b-2 border-[#01c4a0]' : 'text-slate-500'} pb-5 transition-all`}>Accueil</Link>
-            <Link to="/my-places" className={`text-sm font-bold ${location.pathname === '/my-places' ? 'text-white border-b-2 border-[#01c4a0]' : 'text-slate-500'} pb-5 transition-all`}>Mes Lieux</Link>
-            <Link to="/favorites" className={`text-sm font-bold ${location.pathname === '/favorites' ? 'text-white border-b-2 border-[#01c4a0]' : 'text-slate-500'} pb-5 transition-all`}>Favoris</Link>
+            <Link to="/home" className={`text-sm font-bold ${location.pathname === '/home' ? (isDarkMode ? 'text-white border-[#01c4a0]' : 'text-slate-900 border-[#01c4a0]') : 'text-slate-500'} border-b-2 pb-5 transition-all`}>Accueil</Link>
+            <Link to="/my-places" className={`text-sm font-bold ${location.pathname === '/my-places' ? (isDarkMode ? 'text-white border-[#01c4a0]' : 'text-slate-900 border-[#01c4a0]') : 'text-slate-500'} border-b-2 pb-5 transition-all`}>Mes Lieux</Link>
+            <Link to="/favorites" className={`text-sm font-bold ${location.pathname === '/favorites' ? (isDarkMode ? 'text-white border-[#01c4a0]' : 'text-slate-900 border-[#01c4a0]') : 'text-slate-500'} border-b-2 pb-5 transition-all`}>Favoris</Link>
           </nav>
         </div>
 
@@ -162,11 +165,9 @@ export default function Home() {
           
           <div className="flex items-center gap-3 pl-4 border-l border-slate-700 cursor-pointer" onClick={() => setActiveMenu(activeMenu === 'profile' ? null : 'profile')}>
             <div className="text-right hidden sm:block">
-              {/* NOM UTILISATEUR DYNAMIQUE */}
               <p className="text-[10px] font-black uppercase">{user ? user.name : 'Chargement...'}</p>
               <p className="text-[9px] text-[#01c4a0] font-bold">SIL - CONNECTÉ</p>
             </div>
-            {/* INITIALE DYNAMIQUE */}
             <div className="w-10 h-10 rounded-full bg-[#004d40] border-2 border-[#01c4a0] flex items-center justify-center font-bold">
                {user ? user.name.charAt(0).toUpperCase() : 'U'}
             </div>
@@ -178,7 +179,7 @@ export default function Home() {
                 <p className="text-[10px] font-bold text-[#01c4a0] uppercase">Session active</p>
                 <p className="text-xs font-medium truncate">{user?.email}</p>
               </div>
-              <button className="w-full text-left p-3 hover:bg-slate-500/10 rounded-xl text-xs font-bold flex items-center gap-3"><span className="material-symbols-outlined text-sm">person</span> Mon Profil</button>
+              <button onClick={() => navigate('/profile')} className="w-full text-left p-3 hover:bg-slate-500/10 rounded-xl text-xs font-bold flex items-center gap-3"><span className="material-symbols-outlined text-sm">person</span> Mon Profil</button>
               <button onClick={() => { setIsDarkMode(!isDarkMode); setActiveMenu(null); }} className="w-full text-left p-3 hover:bg-slate-500/10 rounded-xl text-xs font-bold flex items-center gap-3"><span className="material-symbols-outlined text-sm">settings</span> Paramètres (Thème)</button>
               <hr className="my-1 border-slate-700/50" />
               <button onClick={handleLogout} className="w-full text-left p-3 text-red-500 rounded-xl text-xs font-bold flex items-center gap-3"><span className="material-symbols-outlined text-sm">logout</span> Déconnexion</button>
@@ -188,7 +189,7 @@ export default function Home() {
       </header>
 
       <main className="flex flex-grow overflow-hidden relative">
-        <aside className={`w-[350px] h-full z-[100] p-6 flex flex-col border-r ${isDarkMode ? 'bg-[#0b1c30] border-slate-800' : 'bg-white border-slate-200 shadow-xl'}`}>
+        <aside className={`w-[350px] h-full z-[100] p-6 flex flex-col border-r transition-colors duration-500 ${isDarkMode ? 'bg-[#0b1c30] border-slate-800' : 'bg-white border-slate-200 shadow-xl'}`}>
           <button onClick={handleSaveLocation} className="w-full py-4 bg-[#00685f] text-white rounded-xl font-black text-[11px] uppercase shadow-lg hover:scale-[1.02] active:scale-95 transition-all mb-8">
               + Enregistrer ma position
           </button>
@@ -199,7 +200,7 @@ export default function Home() {
             </h3>
             
             {(location.pathname === '/home' ? nearbyPlaces : mySavedPlaces).map(p => (
-              <div key={p.id} onClick={() => setMapCenter([p.lat, p.lon])} className="p-4 rounded-xl bg-slate-800/30 border border-transparent hover:border-[#01c4a0] cursor-pointer transition-all">
+              <div key={p.id} onClick={() => setMapCenter([p.lat, p.lon])} className={`p-4 rounded-xl border border-transparent hover:border-[#01c4a0] cursor-pointer transition-all ${isDarkMode ? 'bg-slate-800/30' : 'bg-slate-50 shadow-sm'}`}>
                 <h4 className="font-bold text-sm">{p.name}</h4>
                 <p className="text-[9px] text-[#01c4a0] font-bold uppercase mt-1 italic">{p.cat}</p>
               </div>
@@ -218,7 +219,6 @@ export default function Home() {
           </MapContainer>
 
           <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center">
-            {/* BARRE DE RECHERCHE ZONE */}
             <form onSubmit={handleSearchArea} className="mt-8 w-full max-w-xl px-6 pointer-events-auto">
               <div className={`rounded-full shadow-2xl flex items-center px-6 h-16 border transition-all ${isDarkMode ? 'bg-[#1a2c3d] border-slate-700' : 'bg-white border-slate-200'}`}>
                 <span className={`material-symbols-outlined text-[#01c4a0] mr-4 cursor-pointer ${loading ? 'animate-spin' : ''}`} onClick={handleSearchArea}>
@@ -233,13 +233,12 @@ export default function Home() {
               </div>
             </form>
 
-            {/* BOUTONS FILTRES LIEUX */}
             <div className="mt-4 flex gap-2 pointer-events-auto">
               {['RESTAURANT', 'HÔTEL', 'SANTÉ', 'SPORT'].map((cat) => (
                 <button 
                   key={cat} 
                   onClick={() => fetchNearby(cat)} 
-                  className={`px-5 py-2.5 rounded-full text-[10px] font-black shadow-xl transition-all uppercase ${activeFilter === cat ? 'bg-[#01c4a0] text-white scale-105' : 'bg-white text-slate-900 hover:bg-[#01c4a0] hover:text-white'}`}
+                  className={`px-5 py-2.5 rounded-full text-[10px] font-black shadow-xl transition-all uppercase ${activeFilter === cat ? 'bg-[#01c4a0] text-white scale-105' : (isDarkMode ? 'bg-[#1a2c3d] text-white' : 'bg-white text-slate-900') + ' hover:bg-[#01c4a0] hover:text-white'}`}
                 >
                   {cat}
                 </button>
@@ -249,7 +248,7 @@ export default function Home() {
             <div className="absolute bottom-10 right-8 pointer-events-auto">
               <button 
                 onClick={() => navigator.geolocation.getCurrentPosition(p => setMapCenter([p.coords.latitude, p.coords.longitude]))} 
-                className="w-14 h-14 rounded-2xl bg-white shadow-2xl flex items-center justify-center text-[#01c4a0] hover:scale-110 active:scale-95 transition-all"
+                className={`w-14 h-14 rounded-2xl shadow-2xl flex items-center justify-center text-[#01c4a0] hover:scale-110 active:scale-95 transition-all ${isDarkMode ? 'bg-[#1a2c3d]' : 'bg-white'}`}
               >
                 <span className="material-symbols-outlined text-3xl">my_location</span>
               </button>

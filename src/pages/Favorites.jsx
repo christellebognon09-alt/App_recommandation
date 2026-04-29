@@ -1,111 +1,93 @@
-import React, { useState, useEffect } from 'react'; // <--- CORRIGÉ : Import useEffect
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 
 export default function Favorites() {
   const navigate = useNavigate();
 
-  // 1. ÉTATS
-  const [favoritePlaces, setFavoritePlaces] = useState([
-    { id: 1, name: "Hôtel Azalaï", category: "Tourisme", city: "Cotonou", rating: 4.8 },
-    { id: 2, name: "Espace Dina", category: "Restaurant", city: "Calavi", rating: 4.5 },
-    { id: 3, name: "Place de l'Amazone", category: "Tourisme", city: "Cotonou", rating: 4.9 },
+  // 1. ÉTAT DU THÈME (Lecture du localStorage dès le début)
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    try {
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch {
+      return true;
+    }
+  });
+
+  // Simulation de données (à remplacer par tes vrais favoris plus tard)
+  const [favorites, setFavorites] = useState([
+    { id: 1, name: "Plage de Fidjrossè", category: "Loisir", city: "Cotonou" },
+    { id: 2, name: "Erevan Supermarché", category: "Commerce", city: "Cotonou" },
   ]);
 
-  const [isDarkMode, setIsDarkMode] = useState(localStorage.getItem('theme') === 'dark');
-
-  // 2. EFFET MODE SOMBRE
+  // 2. SYNCHRONISATION DU THÈME
   useEffect(() => {
+    const root = document.documentElement;
     if (isDarkMode) {
-      document.documentElement.classList.add('dark');
+      root.classList.add('dark');
     } else {
-      document.documentElement.classList.remove('dark');
+      root.classList.remove('dark');
     }
+
+    // Écouteur pour changer en temps réel si tu changes le mode ailleurs
+    const syncTheme = () => {
+      const saved = localStorage.getItem('theme');
+      if (saved !== null) setIsDarkMode(JSON.parse(saved));
+    };
+
+    window.addEventListener('storage', syncTheme);
+    return () => window.removeEventListener('storage', syncTheme);
   }, [isDarkMode]);
 
-  // 3. FONCTIONS
-  const handleShowDirection = (place) => {
-    const fullAddress = `${place.name}, ${place.city}, Benin`;
-    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`;
-    window.open(url, '_blank');
-  };
-     
-  const toggleFavorite = (id) => {
-    setFavoritePlaces(favoritePlaces.filter(place => place.id !== id));
-  };
-
   return (
-    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-300 ${isDarkMode ? 'bg-[#0b1c30] text-white' : 'bg-[#f8f9ff] text-[#0b1c30]'}`}>
+    <div className={`min-h-screen font-sans flex flex-col transition-colors duration-500 ${isDarkMode ? 'bg-[#050c14] text-white' : 'bg-[#f8f9ff] text-[#0b1c30]'}`}>
       
       {/* HEADER */}
-      <header className={`border-b px-6 h-16 flex items-center justify-between sticky top-0 z-50 ${isDarkMode ? 'bg-[#0b1c30] border-slate-700' : 'bg-white border-slate-200 shadow-sm'}`}>
+      <header className={`border-b px-6 h-16 flex items-center justify-between sticky top-0 z-50 transition-colors duration-500 ${isDarkMode ? 'bg-[#0b1c30] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
         <div className="flex items-center gap-4">
           <button onClick={() => navigate(-1)} className={`p-2 rounded-full transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-white' : 'hover:bg-slate-100 text-slate-600'}`}>
             <span className="material-symbols-outlined">arrow_back</span>
           </button>
-          <h1 className={`text-lg font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Mes Favoris</h1>
+          <h1 className="text-lg font-black">Mes Favoris</h1>
         </div>
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-[#00685f] ${isDarkMode ? 'bg-[#00685f]/20' : 'bg-[#00685f]/10'}`}>
-          <span className="material-symbols-outlined font-variation-fill text-xl">favorite</span>
-        </div>
+        <Link to="/home" className="text-sm font-bold text-[#01c4a0] hover:opacity-80">
+          Retour à la carte
+        </Link>
       </header>
 
       <main className="max-w-4xl mx-auto w-full py-8 px-6 flex-grow">
-        {favoritePlaces.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {favoritePlaces.map((place) => (
-              <div key={place.id} className={`rounded-[2.5rem] p-5 border shadow-sm hover:shadow-md transition-all group ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-white border-slate-100'}`}>
-                <div className="flex justify-between items-start mb-4">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-[#00685f] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                    <span className="material-symbols-outlined text-3xl">map</span>
-                  </div>
-                  <button 
-                    onClick={() => toggleFavorite(place.id)}
-                    className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-sm"
-                  >
-                    <span className="material-symbols-outlined fill-1 text-xl">favorite</span>
-                  </button>
-                </div>
+        <div className="mb-8">
+            <h2 className="text-2xl font-black">Lieux enregistrés</h2>
+            <p className="text-sm text-slate-500 font-medium italic">{favorites.length} favoris enregistrés</p>
+        </div>
 
+        {/* LISTE DES FAVORIS */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {favorites.map((fav) => (
+            <div key={fav.id} className={`p-5 rounded-[2rem] border flex items-center justify-between transition-all duration-500 ${isDarkMode ? 'bg-[#0b1c30] border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-red-500 ${isDarkMode ? 'bg-red-500/10' : 'bg-red-50'}`}>
+                  <span className="material-symbols-outlined text-2xl">favorite</span>
+                </div>
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-black text-[#00685f] uppercase tracking-widest bg-[#00685f]/10 px-2 py-0.5 rounded-lg">
-                      {place.category}
-                    </span>
-                    <div className="flex items-center text-amber-400 text-xs font-bold">
-                      <span className="material-symbols-outlined text-sm mr-1 fill-1">star</span>
-                      {place.rating}
-                    </div>
-                  </div>
-                  <h3 className={`text-lg font-black mb-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{place.name}</h3>
-                  <p className="text-sm text-slate-400 font-medium flex items-center gap-1">
-                    <span className="material-symbols-outlined text-xs">location_on</span>
-                    {place.city}, Bénin
-                  </p>
+                  <h3 className="font-bold text-sm">{fav.name}</h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase">{fav.category} • {fav.city}</p>
                 </div>
-
-                <button 
-                  onClick={() => handleShowDirection(place)}
-                  className={`w-full mt-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-lg ${isDarkMode ? 'bg-slate-700 text-white hover:bg-[#00685f]' : 'bg-slate-900 text-white hover:bg-[#00685f]'}`}
-                >
-                  Voir l'itinéraire
-                </button>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 ${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-100 text-slate-300'}`}>
-              <span className="material-symbols-outlined text-5xl">heart_broken</span>
+              
+              <button className={`p-2 rounded-full transition-colors ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}>
+                <span className="material-symbols-outlined text-slate-400">more_vert</span>
+              </button>
             </div>
-            <h2 className={`text-xl font-black mb-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Aucun favori pour l'instant</h2>
-            <button 
-              onClick={() => navigate('/home')}
-              className="mt-8 px-8 py-4 bg-[#00685f] text-white rounded-2xl font-black text-xs uppercase"
-            >
-              Explorer les lieux
-            </button>
-          </div>
-        )}
+          ))}
+
+          {favorites.length === 0 && (
+            <div className="col-span-full py-20 text-center">
+              <span className="material-symbols-outlined text-6xl text-slate-700 mb-4">heart_broken</span>
+              <p className="text-slate-500 font-bold">Aucun favori pour le moment.</p>
+            </div>
+          )}
+        </div>
       </main>
     </div>
   );
