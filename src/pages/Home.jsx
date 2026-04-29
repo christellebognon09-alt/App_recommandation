@@ -1,260 +1,262 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import AddPlaceModal from '../components/AddPlaceModal';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+import api from '../api/axios'; // Assure-toi que le chemin est correct
+
+// --- CONFIGURATION DES ICONES ---
+const userIcon = L.icon({ 
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', 
+  iconSize: [25, 41], iconAnchor: [12, 41] 
+});
+
+const placeIcon = L.icon({ 
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', 
+  iconSize: [25, 41], iconAnchor: [12, 41] 
+});
+
+// Composant pour déplacer la caméra de la carte
+function MapController({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) map.flyTo(center, 15, { animate: true });
+  }, [center, map]);
+  return null;
+}
 
 export default function Home() {
   const navigate = useNavigate();
-
-  // --- ÉTATS (STATES) ---
-  const [search, setSearch] = useState("");
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeFilter, setActiveFilter] = useState(null);
+  const location = useLocation();
   
-  // États pour les menus déroulants
-  const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  // --- ÉTATS UTILISATEUR CONNECTÉ ---
+  const [user, setUser] = useState(null);
 
-  // États pour les paramètres (avec récupération du stockage local)
-  const [isDarkMode, setIsDarkMode] = useState(
-    localStorage.getItem('theme') === 'dark'
-  );
-  const [language, setLanguage] = useState(
-    localStorage.getItem('lang') || "Français"
-  );
+  useEffect(() => {
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    } else {
+      navigate('/login');
+    }
+  }, [navigate]);
 
-  const [notifications, setNotifications] = useState([
-    { id: 1, text: "Nouveau lieu validé : Place de l'Amazone", time: "Il y a 5 min", unread: true },
-    { id: 2, text: "Bienvenue sur GeoSmart !", time: "Il y a 1h", unread: false },
+  // États UI
+  const [activeMenu, setActiveMenu] = useState(null);
+  const [search, setSearch] = useState("");
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [activeFilter, setActiveFilter] = useState(null);
+  const [loading, setLoading] = useState(false);
+  
+  // États Données
+  const [userPos, setUserPos] = useState([6.4481, 2.3481]); // Position GPS réelle
+  const [mapCenter, setMapCenter] = useState([6.4481, 2.3481]); // Centre de recherche
+  const [nearbyPlaces, setNearbyPlaces] = useState([]); // Résultats API (Restos, etc.)
+  const [mySavedPlaces, setMySavedPlaces] = useState([
+    { id: 1, name: "Mon Bureau - SIL", cat: "TRAVAIL", lat: 6.449, lon: 2.350 }
   ]);
 
-  const categories = [
-    { id: 'restaurant', label: 'Restaurants', icon: 'restaurant' },
-    { id: 'hotel', label: 'Hôtels', icon: 'hotel' },
-    { id: 'pharmacy', label: 'Pharmacies', icon: 'local_pharmacy' },
-    { id: 'tourism', label: 'Tourisme', icon: 'attractions' },
-  ];
-
-  // --- EFFETS (EFFECTS) ---
-  useEffect(() => {
-    // Appliquer le mode sombre au body
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+  // FONCTION LOGOUT
+  const handleLogout = async () => {
+    try {
+      await api.post('/logout');
+    } catch (err) {
+      console.error("Erreur logout");
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      navigate('/login');
     }
-  }, [isDarkMode]);
-
-  useEffect(() => {
-    localStorage.setItem('lang', language);
-  }, [language]);
-
-  // --- FONCTIONS ---
-  const closeAllMenus = () => {
-    setIsNotifOpen(false);
-    setIsSettingsOpen(false);
   };
 
-  const handleLogout = () => {
-    if (window.confirm("Voulez-vous vous déconnecter ?")) {
-      // Vider les données de session si nécessaire
-      // localStorage.removeItem('userToken');
-      navigate('/');
+  // 1. RECHERCHE DE QUARTIER / VILLE (API Nominatim)
+  const handleSearchArea = async (e) => {
+    if (e) e.preventDefault();
+    if (!search) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${search}&limit=1`);
+      const data = await res.json();
+      if (data.length > 0) {
+        const coords = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+        setMapCenter(coords);
+        setNearbyPlaces([]); // On vide les anciens résultats
+        setActiveFilter(null);
+        if (location.pathname !== '/home') navigate('/home');
+      } else {
+        alert("Quartier ou ville non trouvé.");
+      }
+    } catch (err) {
+      console.error("Erreur recherche zone:", err);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  // 2. RECHERCHE DE LIEUX PROCHES (Resto, Santé, etc.) AUTOUR DE LA ZONE
+  const fetchNearby = async (category) => {
+    setActiveFilter(category);
+    setLoading(true);
+    
+    const tags = { 
+      'RESTAURANT': 'restaurant', 
+      'HÔTEL': 'hotel', 
+      'SANTÉ': 'hospital', 
+      'SPORT': 'gym' 
+    };
+
+    const query = `[out:json];(node["amenity"="${tags[category]}"](around:3000,${mapCenter[0]},${mapCenter[1]});way["amenity"="${tags[category]}"](around:3000,${mapCenter[0]},${mapCenter[1]}););out center;`;
+    
+    try {
+      const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      const results = data.elements.map(el => ({
+        id: el.id,
+        name: el.tags.name || `${category}`,
+        lat: el.lat || el.center.lat,
+        lon: el.lon || el.center.lon,
+        cat: category
+      }));
+      setNearbyPlaces(results);
+    } catch (err) {
+      console.error("Erreur Overpass:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 3. ENREGISTRER UN LIEU (UTILISE LE GPS)
+  const handleSaveLocation = () => {
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const newLieu = {
+        id: Date.now(),
+        name: `Lieu enregistré (${new Date().toLocaleTimeString()})`,
+        cat: "FAVORI",
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude
+      };
+      // Note: Correction ici pour utiliser setMySavedPlaces car setSavedPlaces n'était pas défini
+      setMySavedPlaces([newLieu, ...mySavedPlaces]);
+      setUserPos([pos.coords.latitude, pos.coords.longitude]);
+      setMapCenter([pos.coords.latitude, pos.coords.longitude]);
+      alert("Position actuelle enregistrée avec succès !");
+    }, () => alert("Impossible d'accéder à votre position GPS."));
   };
 
   return (
-    <div className={`h-screen font-sans overflow-hidden flex flex-col transition-colors duration-300 ${isDarkMode ? 'bg-[#0b1c30] text-white' : 'bg-[#f8f9ff] text-[#0b1c30]'}`}>
+    <div className={`h-screen w-full flex flex-col ${isDarkMode ? 'bg-[#050c14] text-white' : 'bg-slate-50 text-slate-900'}`}>
       
-      {/* 1. BARRE DE NAVIGATION (HEADER) */}
-      <header className={`w-full h-16 border-b sticky top-0 z-50 backdrop-blur-md flex justify-between items-center px-6 ${isDarkMode ? 'bg-[#0b1c30]/95 border-slate-700' : 'bg-white/95 border-slate-200 shadow-sm'}`}>
+      {/* HEADER FONCTIONNEL MIS À JOUR */}
+      <header className={`w-full h-16 border-b flex justify-between items-center px-6 z-[5000] ${isDarkMode ? 'bg-[#0b1c30] border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}>
         <div className="flex items-center gap-8">
-          <Link to="/home" className="text-xl font-black text-[#00685f] tracking-tighter">GeoSmart</Link>
-          <nav className="hidden md:flex items-center gap-6">
-            <Link to="/home" className={`text-sm font-bold border-b-2 border-[#00685f] pb-5 text-[#00685f]`}>Accueil</Link>
-            <Link to="/my-places" className={`text-sm font-medium transition-colors ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-[#00685f]'}`}>Gérer les lieux</Link>
-            <Link to="/favorites" className="text-sm font-medium text-slate-500 hover:text-[#00685f] transition-colors">Favoris</Link>
+          <h1 className="text-xl font-black text-[#01c4a0]">GeoSmart</h1>
+          <nav className="hidden md:flex gap-6 h-full pt-5">
+            <Link to="/home" className={`text-sm font-bold ${location.pathname === '/home' ? 'text-white border-b-2 border-[#01c4a0]' : 'text-slate-500'} pb-5 transition-all`}>Accueil</Link>
+            <Link to="/my-places" className={`text-sm font-bold ${location.pathname === '/my-places' ? 'text-white border-b-2 border-[#01c4a0]' : 'text-slate-500'} pb-5 transition-all`}>Mes Lieux</Link>
+            <Link to="/favorites" className={`text-sm font-bold ${location.pathname === '/favorites' ? 'text-white border-b-2 border-[#01c4a0]' : 'text-slate-500'} pb-5 transition-all`}>Favoris</Link>
           </nav>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4 relative">
+          <button onClick={() => setActiveMenu(activeMenu === 'notif' ? null : 'notif')} className="p-2 text-slate-400 hover:text-white"><span className="material-symbols-outlined">notifications</span></button>
           
-          {/* MENU NOTIFICATIONS */}
-          <div className="relative">
-            <button 
-              onClick={() => { closeAllMenus(); setIsNotifOpen(!isNotifOpen); }}
-              className={`p-2.5 rounded-full transition-all relative ${isNotifOpen ? 'bg-[#00685f]/10 text-[#00685f]' : 'hover:bg-slate-100/50 text-slate-500'}`}
-            >
-              <span className="material-symbols-outlined">notifications</span>
-              {notifications.some(n => n.unread) && (
-                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-              )}
-            </button>
-
-            {isNotifOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={closeAllMenus}></div>
-                <div className={`absolute right-0 mt-3 w-80 shadow-2xl rounded-[2rem] overflow-hidden z-20 animate-in fade-in zoom-in duration-200 border ${isDarkMode ? 'bg-[#162a41] border-slate-700' : 'bg-white border-slate-100'}`}>
-                  <div className={`p-5 border-b flex justify-between items-center ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50/30 border-slate-50'}`}>
-                    <h3 className="font-black text-sm">Notifications</h3>
-                    <span className="text-[10px] bg-[#00685f]/10 text-[#00685f] px-2 py-1 rounded-full font-bold">
-                      {notifications.filter(n => n.unread).length} Nouvelles
-                    </span>
-                  </div>
-                  <div className="max-h-64 overflow-y-auto">
-                    {notifications.map((notif) => (
-                      <div key={notif.id} className={`p-4 border-b transition-colors cursor-pointer ${isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-50 hover:bg-slate-50'}`}>
-                        <p className={`text-xs font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{notif.text}</p>
-                        <p className="text-[10px] text-slate-400 mt-1">{notif.time}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* MENU PARAMÈTRES */}
-          <div className="relative">
-            <button 
-              onClick={() => { closeAllMenus(); setIsSettingsOpen(!isSettingsOpen); }}
-              className={`p-2.5 rounded-full transition-all ${isSettingsOpen ? 'bg-[#00685f]/10 text-[#00685f]' : 'hover:bg-slate-100/50 text-slate-500'}`}
-            >
-              <span className="material-symbols-outlined">settings</span>
-            </button>
-
-            {isSettingsOpen && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={closeAllMenus}></div>
-                <div className={`absolute right-0 mt-3 w-64 shadow-2xl rounded-[2rem] overflow-hidden z-20 animate-in fade-in zoom-in duration-200 border ${isDarkMode ? 'bg-[#162a41] border-slate-700' : 'bg-white border-slate-100'}`}>
-                  <div className={`p-5 border-b ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50/30 border-slate-50'}`}>
-                    <h3 className="font-black text-sm text-[#00685f]">Paramètres</h3>
-                  </div>
-                  <div className="p-2">
-                    <button 
-                      onClick={() => setLanguage(language === "Français" ? "English" : "Français")}
-                      className={`w-full flex items-center justify-between p-3 rounded-2xl transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-50 text-slate-700'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-xl">language</span>
-                        <span className="text-xs font-bold">Langue</span>
-                      </div>
-                      <span className="text-[9px] font-black uppercase text-[#00685f]">{language}</span>
-                    </button>
-                    
-                    <button 
-                      onClick={() => setIsDarkMode(!isDarkMode)}
-                      className={`w-full flex items-center justify-between p-3 rounded-2xl transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-50 text-slate-700'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-xl">{isDarkMode ? 'light_mode' : 'dark_mode'}</span>
-                        <span className="text-xs font-bold">Mode sombre</span>
-                      </div>
-                      <div className={`w-8 h-4 rounded-full relative transition-colors ${isDarkMode ? 'bg-[#00685f]' : 'bg-slate-200'}`}>
-                        <div className={`absolute top-1 w-2 h-2 bg-white rounded-full transition-all ${isDarkMode ? 'right-1' : 'left-1'}`}></div>
-                      </div>
-                    </button>
-
-                    <div className={`h-px my-2 mx-3 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-100'}`}></div>
-                    
-                    <button onClick={handleLogout} className="w-full flex items-center gap-3 p-3 hover:bg-red-50 rounded-2xl transition-colors text-red-500">
-                      <span className="material-symbols-outlined text-xl">logout</span>
-                      <span className="text-xs font-bold">Déconnexion</span>
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-          
-          <Link to="/profile" className={`flex items-center gap-3 pl-4 border-l group ml-2 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+          <div className="flex items-center gap-3 pl-4 border-l border-slate-700 cursor-pointer" onClick={() => setActiveMenu(activeMenu === 'profile' ? null : 'profile')}>
             <div className="text-right hidden sm:block">
-              <p className={`text-[11px] font-black group-hover:text-[#00685f] transition-colors ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Utilisateur SIL</p>
-              <p className="text-[9px] text-slate-400 uppercase font-bold">Cotonou, Bénin</p>
+              {/* NOM UTILISATEUR DYNAMIQUE */}
+              <p className="text-[10px] font-black uppercase">{user ? user.name : 'Chargement...'}</p>
+              <p className="text-[9px] text-[#01c4a0] font-bold">SIL - CONNECTÉ</p>
             </div>
-            <div className="w-9 h-9 rounded-full bg-[#00685f]/10 flex items-center justify-center border border-[#00685f]/20 group-hover:border-[#00685f] transition-all text-[#00685f]">
-              <span className="material-symbols-outlined">person</span>
+            {/* INITIALE DYNAMIQUE */}
+            <div className="w-10 h-10 rounded-full bg-[#004d40] border-2 border-[#01c4a0] flex items-center justify-center font-bold">
+               {user ? user.name.charAt(0).toUpperCase() : 'U'}
             </div>
-          </Link>
+          </div>
+
+          {activeMenu === 'profile' && (
+            <div className={`absolute right-0 top-14 w-60 shadow-2xl rounded-2xl p-3 z-[6000] ${isDarkMode ? 'bg-[#1a2c3d] text-white border border-slate-700' : 'bg-white text-slate-900 border'}`}>
+              <div className="px-3 py-2 mb-2 border-b border-slate-700/50">
+                <p className="text-[10px] font-bold text-[#01c4a0] uppercase">Session active</p>
+                <p className="text-xs font-medium truncate">{user?.email}</p>
+              </div>
+              <button className="w-full text-left p-3 hover:bg-slate-500/10 rounded-xl text-xs font-bold flex items-center gap-3"><span className="material-symbols-outlined text-sm">person</span> Mon Profil</button>
+              <button onClick={() => { setIsDarkMode(!isDarkMode); setActiveMenu(null); }} className="w-full text-left p-3 hover:bg-slate-500/10 rounded-xl text-xs font-bold flex items-center gap-3"><span className="material-symbols-outlined text-sm">settings</span> Paramètres (Thème)</button>
+              <hr className="my-1 border-slate-700/50" />
+              <button onClick={handleLogout} className="w-full text-left p-3 text-red-500 rounded-xl text-xs font-bold flex items-center gap-3"><span className="material-symbols-outlined text-sm">logout</span> Déconnexion</button>
+            </div>
+          )}
         </div>
       </header>
 
-      <main className="relative flex flex-grow overflow-hidden">
-        
-        {/* 2. BARRE LATÉRALE (SIDEBAR) */}
-        <aside className={`w-[400px] h-full border-r shadow-sm flex flex-col z-40 ${isDarkMode ? 'bg-[#0b1c30] border-slate-700' : 'bg-white border-slate-200'}`}>
-          <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700 bg-slate-900/20' : 'border-slate-100 bg-slate-50/50'}`}>
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-[#00685f] flex items-center justify-center text-white shadow-lg">
-                <span className="material-symbols-outlined">explore</span>
-              </div>
-              <div>
-                <h2 className="font-bold text-sm">Exploration Locale</h2>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">GeoSmart App</p>
-              </div>
-            </div>
-            <button onClick={() => setIsModalOpen(true)} className="w-full py-3.5 bg-[#00685f] text-white rounded-2xl font-bold text-sm hover:opacity-90 transition-all flex items-center justify-center gap-2">
-               <span className="material-symbols-outlined text-sm">add_location_alt</span> Ajouter un nouveau lieu
-            </button>
-          </div>
-
-          <div className="flex-grow overflow-y-auto p-4 space-y-4 custom-scrollbar">
-            <h3 className="px-2 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">
-              {activeFilter ? `Résultats : ${activeFilter}` : "Lieux recommandés"}
+      <main className="flex flex-grow overflow-hidden relative">
+        <aside className={`w-[350px] h-full z-[100] p-6 flex flex-col border-r ${isDarkMode ? 'bg-[#0b1c30] border-slate-800' : 'bg-white border-slate-200 shadow-xl'}`}>
+          <button onClick={handleSaveLocation} className="w-full py-4 bg-[#00685f] text-white rounded-xl font-black text-[11px] uppercase shadow-lg hover:scale-[1.02] active:scale-95 transition-all mb-8">
+              + Enregistrer ma position
+          </button>
+          
+          <div className="flex-grow overflow-y-auto space-y-4 no-scrollbar">
+            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+              {location.pathname === '/home' ? '📍 Résultats' : '📚 Ma Liste'}
             </h3>
-            <div className={`group rounded-3xl p-3 border transition-all cursor-pointer ${isDarkMode ? 'bg-slate-800/40 border-transparent hover:border-slate-600' : 'bg-slate-50 border-transparent hover:border-slate-200 hover:shadow-xl'}`}>
-              <div className="relative h-36 w-full bg-slate-300/20 rounded-2xl overflow-hidden mb-3">
-                <div className="absolute inset-0 flex items-center justify-center text-slate-400">
-                    <span className="material-symbols-outlined text-4xl">map_search</span>
-                </div>
+            
+            {(location.pathname === '/home' ? nearbyPlaces : mySavedPlaces).map(p => (
+              <div key={p.id} onClick={() => setMapCenter([p.lat, p.lon])} className="p-4 rounded-xl bg-slate-800/30 border border-transparent hover:border-[#01c4a0] cursor-pointer transition-all">
+                <h4 className="font-bold text-sm">{p.name}</h4>
+                <p className="text-[9px] text-[#01c4a0] font-bold uppercase mt-1 italic">{p.cat}</p>
               </div>
-              <h4 className="font-bold text-sm">Place de l'Amazone</h4>
-              <p className="text-[11px] text-slate-500">Cotonou • 2.4 km</p>
-            </div>
+            ))}
           </div>
         </aside>
 
-        {/* 3. ZONE CARTE (MAP) */}
-        <section className={`flex-grow relative overflow-hidden ${isDarkMode ? 'bg-[#0f243a]' : 'bg-[#eef2ff]'}`}>
-          <div className="absolute inset-0 opacity-10" style={{ backgroundImage: `radial-gradient(${isDarkMode ? '#ffffff' : '#00685f'} 1px, transparent 1px)`, backgroundSize: '30px 30px' }}></div>
-          
-          <div className="absolute top-8 left-0 right-0 z-30 flex flex-col gap-4 items-center px-6">
-            <div className={`rounded-3xl shadow-2xl flex items-center px-6 h-16 w-full max-w-xl transition-all focus-within:ring-4 focus-within:ring-[#00685f]/10 ${isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-slate-100'}`}>
-              <span className="material-symbols-outlined text-[#00685f] mr-4">search</span>
-              <input 
-                className="bg-transparent border-none focus:ring-0 w-full text-sm font-bold placeholder-slate-400" 
-                placeholder="Rechercher à Cotonou..." 
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
+        <section className="flex-grow relative overflow-hidden">
+          <MapContainer center={mapCenter} zoom={13} className="absolute inset-0 z-0" zoomControl={false}>
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <MapController center={mapCenter} />
+            <Marker position={userPos} icon={userIcon}><Popup>Ma Position Réelle</Popup></Marker>
+            {(location.pathname === '/home' ? nearbyPlaces : mySavedPlaces).map(p => (
+              <Marker key={p.id} position={[p.lat, p.lon]} icon={placeIcon}><Popup>{p.name}</Popup></Marker>
+            ))}
+          </MapContainer>
 
-            <div className="flex gap-2 overflow-x-auto max-w-full no-scrollbar pb-2">
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setActiveFilter(cat.id)}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-black uppercase tracking-widest transition-all shadow-md whitespace-nowrap
-                    ${activeFilter === cat.id ? 'bg-[#00685f] text-white' : (isDarkMode ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-white text-slate-600 border border-slate-100')}`}
+          <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center">
+            {/* BARRE DE RECHERCHE ZONE */}
+            <form onSubmit={handleSearchArea} className="mt-8 w-full max-w-xl px-6 pointer-events-auto">
+              <div className={`rounded-full shadow-2xl flex items-center px-6 h-16 border transition-all ${isDarkMode ? 'bg-[#1a2c3d] border-slate-700' : 'bg-white border-slate-200'}`}>
+                <span className={`material-symbols-outlined text-[#01c4a0] mr-4 cursor-pointer ${loading ? 'animate-spin' : ''}`} onClick={handleSearchArea}>
+                  {loading ? 'sync' : 'search'}
+                </span>
+                <input 
+                  value={search} 
+                  onChange={(e) => setSearch(e.target.value)} 
+                  placeholder="Étape 1: Chercher un quartier (ex: Fidjrossè, Calavi...)" 
+                  className="bg-transparent w-full text-sm font-bold outline-none border-none focus:ring-0 text-inherit" 
+                />
+              </div>
+            </form>
+
+            {/* BOUTONS FILTRES LIEUX */}
+            <div className="mt-4 flex gap-2 pointer-events-auto">
+              {['RESTAURANT', 'HÔTEL', 'SANTÉ', 'SPORT'].map((cat) => (
+                <button 
+                  key={cat} 
+                  onClick={() => fetchNearby(cat)} 
+                  className={`px-5 py-2.5 rounded-full text-[10px] font-black shadow-xl transition-all uppercase ${activeFilter === cat ? 'bg-[#01c4a0] text-white scale-105' : 'bg-white text-slate-900 hover:bg-[#01c4a0] hover:text-white'}`}
                 >
-                  <span className="material-symbols-outlined text-lg">{cat.icon}</span>
-                  {cat.label}
+                  {cat}
                 </button>
               ))}
             </div>
-          </div>
 
-          <div className="absolute bottom-10 right-8 flex flex-col gap-3 z-30">
-            <button className={`w-14 h-14 rounded-2xl shadow-2xl flex items-center justify-center border transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-[#00685f] hover:bg-slate-700' : 'bg-white border-slate-100 text-[#00685f] hover:bg-slate-50'}`}>
-              <span className="material-symbols-outlined font-bold">my_location</span>
-            </button>
+            <div className="absolute bottom-10 right-8 pointer-events-auto">
+              <button 
+                onClick={() => navigator.geolocation.getCurrentPosition(p => setMapCenter([p.coords.latitude, p.coords.longitude]))} 
+                className="w-14 h-14 rounded-2xl bg-white shadow-2xl flex items-center justify-center text-[#01c4a0] hover:scale-110 active:scale-95 transition-all"
+              >
+                <span className="material-symbols-outlined text-3xl">my_location</span>
+              </button>
+            </div>
           </div>
         </section>
       </main>
-
-      <AddPlaceModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );
 }

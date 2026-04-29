@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import api from '../api/axios'; // Importation de ton instance Axios
 
 export default function Login() {
-  // Récupération de l'état du thème
-  const [isDarkMode, setIsDarkMode] = useState(localStorage.getItem('theme') === 'dark');
+  const navigate = useNavigate();
+  
+  // États pour les champs du formulaire
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Application de la classe dark au chargement
+  // État du thème
+  const [isDarkMode] = useState(localStorage.getItem('theme') === 'dark');
+
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
@@ -13,6 +21,30 @@ export default function Login() {
       document.documentElement.classList.remove('dark');
     }
   }, [isDarkMode]);
+
+  // Fonction de connexion
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Appel à Laravel AuthController@login
+      const res = await api.post('/login', { email, password });
+
+      // Stockage sécurisé
+      localStorage.setItem('token', res.data.token);
+      localStorage.setItem('user', JSON.stringify(res.data.user));
+
+      // Redirection vers la carte
+      navigate('/home');
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || "Identifiants incorrects ou erreur serveur.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className={`min-h-screen flex items-center justify-center p-6 font-sans transition-colors duration-300 ${isDarkMode ? 'bg-[#0b1c30]' : 'bg-[#f7f9fb]'}`}>
@@ -24,7 +56,14 @@ export default function Login() {
           <p className={`${isDarkMode ? 'text-slate-400' : 'text-slate-500'} text-sm`}>Bon retour ! Connectez-vous pour continuer.</p>
         </div>
 
-        <form className="space-y-6">
+        {/* Affichage des erreurs si elles existent */}
+        {error && (
+          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/50 text-red-500 text-xs font-bold text-center italic">
+            {error}
+          </div>
+        )}
+
+        <form className="space-y-6" onSubmit={handleLogin}>
           {/* Champ Email */}
           <div className="space-y-2">
             <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest ml-1">Adresse e-mail</label>
@@ -32,7 +71,10 @@ export default function Login() {
               <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">mail</span>
               <input 
                 type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="nom@exemple.com" 
+                required
                 className={`w-full pl-12 pr-4 py-4 border-none rounded-2xl focus:ring-2 focus:ring-[#00685f] outline-none text-sm transition-all shadow-inner ${isDarkMode ? 'bg-slate-800 text-white placeholder-slate-500' : 'bg-slate-50 text-slate-900'}`} 
               />
             </div>
@@ -48,15 +90,24 @@ export default function Login() {
               <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">lock</span>
               <input 
                 type="password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••" 
+                required
                 className={`w-full pl-12 pr-4 py-4 border-none rounded-2xl focus:ring-2 focus:ring-[#00685f] outline-none text-sm transition-all shadow-inner ${isDarkMode ? 'bg-slate-800 text-white placeholder-slate-500' : 'bg-slate-50 text-slate-900'}`} 
               />
             </div>
           </div>
 
           {/* Bouton de connexion */}
-          <button type="submit" className="w-full bg-[#00685f] hover:bg-[#004d46] text-white font-bold py-4 rounded-2xl shadow-lg hover:shadow-[#00685f]/20 transform active:scale-95 transition-all duration-200 mt-4">
-            Se connecter
+          <button 
+            type="submit" 
+            disabled={loading}
+            className={`w-full bg-[#00685f] hover:bg-[#004d46] text-white font-bold py-4 rounded-2xl shadow-lg hover:shadow-[#00685f]/20 transform active:scale-95 transition-all duration-200 mt-4 flex justify-center items-center ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+          >
+            {loading ? (
+               <span className="material-symbols-outlined animate-spin">sync</span>
+            ) : "Se connecter"}
           </button>
 
           {/* Séparateur */}

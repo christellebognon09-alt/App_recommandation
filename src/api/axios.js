@@ -1,0 +1,21 @@
+import axios from 'axios';
+
+const api = axios.create({
+    // L'URL de ton serveur Laravel (vérifie bien le port, souvent 8000)
+    baseURL: 'http://127.0.0.1:8000/api', 
+    headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+    }
+});
+
+// Intercepteur pour envoyer le token automatiquement s'il existe
+api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+});
+
+export default api;
